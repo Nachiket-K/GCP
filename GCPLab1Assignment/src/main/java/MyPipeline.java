@@ -68,6 +68,7 @@ public class MyPipeline
         DataflowPipelineOptions PLoptions = PipelineOptionsFactory.fromArgs(args).withValidation().as(DataflowPipelineOptions.class);
         PLoptions.setJobName("usecase1-labid-5");
         PLoptions.setRegion("europe-west4");
+        PLoptions.setServiceAccount("c4e-uc1-sa-5@nttdata-c4e-bde.iam.gserviceaccount.com");
         PLoptions.setGcpTempLocation("gs://c4e-uc1-dataflow-temp-5/temp");
         PLoptions.setStagingLocation("gs://c4e-uc1-dataflow-temp-5/staging");
         PLoptions.setWorkerMachineType("n1-standard-1");
@@ -88,7 +89,7 @@ public class MyPipeline
 
         public static PCollectionTuple process(PCollection<String> input) throws Exception
         {
-            return input.apply("JsonToCommonLog", ParDo.of(new DoFn<String, CommonLog>()
+            return input.apply("JsonCommonLog", ParDo.of(new DoFn<String, CommonLog>()
             {
                 private static final long serialVrsnUID = 1L;
 
@@ -118,10 +119,10 @@ public class MyPipeline
         // Create the pipeline
         Pipeline Npipeline = Pipeline.create(Poptions);
 
-        PCollection<String> DataOne=Npipeline.apply("ReadMessageFromPubSub", PubsubIO.readStrings().fromSubscription("projects/nttdata-c4e-bde/subscriptions/uc1-input-topic-sub-5"));
+        PCollection<String> DataOne=Npipeline.apply("ReadMessagePubSub", PubsubIO.readStrings().fromSubscription("projects/nttdata-c4e-bde/subscriptions/uc1-input-topic-sub-5"));
         PCollectionTuple PCtuple= JsonToCommonLog.process(DataOne);
 
-        PCtuple.get(VALID_M).apply("CommonLogToJson", ParDo.of(new DoFn<CommonLog, String>()
+        PCtuple.get(VALID_M).apply("CommonLogJson", ParDo.of(new DoFn<CommonLog, String>()
         {
             private static final long serialVrsnUID = 1L;
 
@@ -132,12 +133,13 @@ public class MyPipeline
                 String jsnRec = gsonObj.toJson(Pcontext.element());
                 Pcontext.output(jsnRec);
             }
-        })).apply("JsontoRow", JsonToRow.withSchema(RSchema)).apply("InserttoBigQuery",BigQueryIO.<Row>write().to("nttdata-c4e-bde:uc1_5.account")
+        })).apply("JsontoRow", JsonToRow.withSchema(RSchema)).apply("InsertBigQuery",BigQueryIO.<Row>write().to("nttdata-c4e-bde:uc1_5.account")
                 .useBeamSchema().withCreateDisposition(BigQueryIO.Write.CreateDisposition.CREATE_NEVER).withWriteDisposition(BigQueryIO.Write.WriteDisposition.WRITE_APPEND));
 
-        PCtuple.get(INVALID_M).apply("WriteToDLQTopic", PubsubIO.writeStrings().to("projects/nttdata-c4e-bde/topics/uc1-dlq-topic-5"));
+        PCtuple.get(INVALID_M).apply("WriteDLQTopic", PubsubIO.writeStrings().to("projects/nttdata-c4e-bde/topics/uc1-dlq-topic-5"));
+        LOG.info("Building Pipeline");
         Npipeline.run().waitUntilFinish();
-
+        
 
     }
 }
